@@ -16,7 +16,7 @@ const SERVE_ANGLE_MAX = 15;
 // --- Game State ---
 const state = {
   scores: [0, 0],
-  gameState: 'menu', // 'menu' | 'waiting' | 'playing'
+  gameState: 'menu', // 'menu' | 'waiting' | 'playing' | 'settings'
   serveSide: 0, // 0 = left, 1 = right
   canvas: null,
   ctx: null,
@@ -30,13 +30,41 @@ const state = {
   mouseX: 0,
   mouseY: 0,
   showComingSoon: false, // Flag for placeholder message
-  comingSoonTimer: null // Timer to auto-hide coming soon message
+  comingSoonTimer: null, // Timer to auto-hide coming soon message
+  // Balanced mode settings
+  settings: {
+    advantagedPlayer: 1, // 1 = Player 1 (Left), 2 = Player 2 (Right)
+    paddleSizePercent: 50 // +25%, +50%, +75%, +100%
+  },
+  settingsSelected: 0, // Index of selected settings option (0=Player, 1=Size)
+  settingsMouseHover: -1 // Track mouse hover over settings options
 };
 
 // --- Menu Options ---
 const menuOptions = [
   { label: '1 Player', action: 'comingSoon' },
-  { label: '2 Players', action: 'startGame' }
+  { label: '2 Players', action: 'startGame' },
+  { label: '2 Players - Balanced', action: 'openSettings' }
+];
+
+// --- Settings Options ---
+const settingsOptions = [
+  { label: 'Give advantage to:', value: 'player' },
+  { label: 'Paddle Size:', value: 'size' },
+  { label: 'Start Game', action: 'startBalancedGame' }
+];
+
+// Settings values
+const playerOptions = [
+  { label: 'Player 1 (Left)', value: 1 },
+  { label: 'Player 2 (Right)', value: 2 }
+];
+
+const paddleSizeOptions = [
+  { label: '+25%', value: 25 },
+  { label: '+50%', value: 50 },
+  { label: '+75%', value: 75 },
+  { label: '+100%', value: 100 }
 ];
 
 // --- Initialization ---
@@ -45,6 +73,10 @@ export function init(canvas) {
   state.ctx = canvas.getContext('2d');
   state.W = canvas.width;
   state.H = canvas.height;
+
+  // Reset balanced mode settings to defaults
+  state.settings.advantagedPlayer = 1;
+  state.settings.paddleSizePercent = 50;
 
   // Initialize paddles
   state.paddles = [
@@ -91,6 +123,29 @@ function setupInput() {
       } else if (e.code === 'Space' || e.code === 'Enter') {
         e.preventDefault();
         selectMenuItem();
+      }
+    } else if (state.gameState === 'settings') {
+      // Settings submenu input
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+        e.preventDefault();
+        state.settingsSelected = (state.settingsSelected - 1 + settingsOptions.length) % settingsOptions.length;
+        state.settingsMouseHover = -1;
+      } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        state.settingsSelected = (state.settingsSelected + 1) % settingsOptions.length;
+        state.settingsMouseHover = -1;
+      } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        e.preventDefault();
+        changeSettingsValue(false);
+      } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        e.preventDefault();
+        changeSettingsValue(true);
+      } else if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        selectSettingsItem();
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        goBackToMenu();
       }
     } else if (e.code === 'Space') {
       e.preventDefault();
@@ -143,8 +198,50 @@ function setupInput() {
   state.canvas.addEventListener('mousemove', e => {
     if (state.gameState === 'menu' && state.mouseHoverIndex !== -1) {
       state.canvas.style.cursor = 'pointer';
+    } else if (state.gameState === 'settings' && state.settingsMouseHover !== -1) {
+      state.canvas.style.cursor = 'pointer';
     } else {
       state.canvas.style.cursor = 'default';
+    }
+  });
+  
+  // Mouse input for settings submenu
+  state.canvas.addEventListener('mousemove', e => {
+    if (state.gameState !== 'settings') return;
+    
+    const rect = state.canvas.getBoundingClientRect();
+    state.mouseX = e.clientX - rect.left;
+    state.mouseY = e.clientY - rect.top;
+    
+    // Check if mouse is over any settings option
+    const titleY = state.H / 2 - 120;
+    const optionStartY = state.H / 2;
+    const optionSpacing = 50;
+    const fontSize = 32;
+    
+    state.settingsMouseHover = -1;
+    for (let i = 0; i < settingsOptions.length; i++) {
+      const optionY = optionStartY + i * optionSpacing;
+      const textWidth = state.ctx.measureText(settingsOptions[i].label).width;
+      const textLeft = state.W / 2 - textWidth / 2 - 20;
+      const textRight = state.W / 2 + textWidth / 2 + 20;
+      const textTop = optionY - fontSize;
+      const textBottom = optionY + 10;
+      
+      if (state.mouseX >= textLeft && state.mouseX <= textRight &&
+          state.mouseY >= textTop && state.mouseY <= textBottom) {
+        state.settingsMouseHover = i;
+        break;
+      }
+    }
+  });
+  
+  state.canvas.addEventListener('click', e => {
+    if (state.gameState !== 'settings') return;
+    
+    if (state.settingsMouseHover !== -1) {
+      state.settingsSelected = state.settingsMouseHover;
+      selectSettingsItem();
     }
   });
 }
@@ -167,13 +264,72 @@ function selectMenuItem() {
     state.comingSoonTimer = setTimeout(() => {
       state.showComingSoon = false;
     }, 2000);
+  } else if (selected.action === 'openSettings') {
+    // Open balanced mode settings
+    state.gameState = 'settings';
+    state.settingsSelected = 0;
   }
+}
+
+// --- Settings Navigation ---
+function changeSettingsValue(increase) {
+  const selected = settingsOptions[state.settingsSelected];
+  
+  if (selected.value === 'player') {
+    // Toggle between Player 1 and Player 2
+    if (increase) {
+      state.settings.advantagedPlayer = state.settings.advantagedPlayer === 1 ? 2 : 1;
+    } else {
+      state.settings.advantagedPlayer = state.settings.advantagedPlayer === 1 ? 2 : 1;
+    }
+  } else if (selected.value === 'size') {
+    // Cycle through paddle sizes
+    const currentIndex = paddleSizeOptions.findIndex(opt => opt.value === state.settings.paddleSizePercent);
+    if (increase) {
+      state.settings.paddleSizePercent = paddleSizeOptions[(currentIndex + 1) % paddleSizeOptions.length].value;
+    } else {
+      state.settings.paddleSizePercent = paddleSizeOptions[(currentIndex - 1 + paddleSizeOptions.length) % paddleSizeOptions.length].value;
+    }
+  }
+}
+
+function selectSettingsItem() {
+  const selected = settingsOptions[state.settingsSelected];
+  if (selected.action === 'startBalancedGame') {
+    startBalancedGame();
+  }
+}
+
+function goBackToMenu() {
+  state.gameState = 'menu';
+  state.menuSelected = 1; // Go to 2 Players option
+}
+
+function startBalancedGame() {
+  state.gameState = 'waiting';
+  // Settings are already stored in state.settings
+  // Paddle sizes will be applied when game starts
 }
 
 // --- Serve ---
 function serveBall() {
   state.gameState = 'playing';
   state.ball.speed = BALL_SPEED_INIT;
+
+  // Apply balanced mode paddle size if game started from settings
+  if (state.settings.paddleSizePercent > 0) {
+    const sizeMultiplier = 1 + state.settings.paddleSizePercent / 100;
+    const advantagedPlayer = state.settings.advantagedPlayer;
+    
+    // Apply to the advantaged player's paddle
+    if (advantagedPlayer === 1) {
+      state.paddles[0].h = PADDLE_H * sizeMultiplier;
+      state.paddles[0].y = state.H / 2 - state.paddles[0].h / 2;
+    } else {
+      state.paddles[1].h = PADDLE_H * sizeMultiplier;
+      state.paddles[1].y = state.H / 2 - state.paddles[1].h / 2;
+    }
+  }
 
   // Random vertical angle on serve (±SERVE_ANGLE_MAX degrees)
   const vertAngle = (Math.random() * 2 - 1) * SERVE_ANGLE_MAX;
@@ -288,6 +444,14 @@ function resetBall() {
   state.ball.vx = 0;
   state.ball.vy = 0;
   state.ball.speed = BALL_SPEED_INIT;
+  
+  // Reset paddle sizes to default after scoring (if in balanced mode)
+  if (state.settings.paddleSizePercent > 0) {
+    state.paddles[0].h = PADDLE_H;
+    state.paddles[0].y = state.H / 2 - PADDLE_H / 2;
+    state.paddles[1].h = PADDLE_H;
+    state.paddles[1].y = state.H / 2 - PADDLE_H / 2;
+  }
 }
 
 // --- Rendering ---
@@ -322,6 +486,75 @@ function drawWaitingMessage() {
     state.ctx.textAlign = 'center';
     state.ctx.fillText('Press SPACE to serve', state.W / 2, state.H - 30);
   }
+}
+
+// --- Settings Menu Rendering ---
+function drawSettings() {
+  if (state.gameState !== 'settings') return;
+  
+  const ctx = state.ctx;
+  const W = state.W;
+  const H = state.H;
+  
+  // Clear canvas first
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Draw same background as main menu
+  drawMenuBackground();
+  
+  // Title with glow effect
+  ctx.shadowColor = '#00ff00';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#0f0';
+  ctx.font = 'bold 72px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('BALANCED MODE', W / 2, H / 2 - 120);
+  ctx.shadowBlur = 0;
+  
+  // Settings options
+  ctx.font = 'bold 32px Courier New';
+  settingsOptions.forEach((option, index) => {
+    const y = H / 2 + index * 50;
+    const isSelected = index === state.settingsSelected;
+    const isHovered = index === state.settingsMouseHover;
+    
+    if (isSelected || isHovered) {
+      // Green highlight for selected/hovered
+      ctx.fillStyle = '#0f0';
+      ctx.shadowColor = '#0f0';
+      ctx.shadowBlur = 10;
+    } else {
+      ctx.fillStyle = '#fff';
+      ctx.shadowBlur = 0;
+    }
+    
+    // Display the option with current value
+    let displayText = option.label;
+    
+    if (option.value === 'player') {
+      const playerLabel = state.settings.advantagedPlayer === 1 ? 'Player 1 (Left)' : 'Player 2 (Right)';
+      displayText = `Give advantage to: ${playerLabel}`;
+    } else if (option.value === 'size') {
+      const sizeLabel = `+${state.settings.paddleSizePercent}%`;
+      displayText = `Paddle Size: ${sizeLabel}`;
+    }
+    
+    if (isSelected || isHovered) {
+      ctx.shadowBlur = 10;
+      ctx.fillText('> ' + displayText + ' <', W / 2, y);
+      ctx.shadowBlur = 0;
+    } else {
+      ctx.fillText(displayText, W / 2, y);
+    }
+  });
+  
+  // Controls info at bottom
+  ctx.fillStyle = '#666';
+  ctx.font = '16px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('↑/↓ or W/S = Navigate  |  ←/→ or A/D = Change Value', W / 2, H - 60);
+  ctx.fillText('SPACE/ENTER = Select  |  ESC = Back to Menu', W / 2, H - 35);
 }
 
 // --- Menu Rendering ---
@@ -454,8 +687,8 @@ function drawMenu() {
 }
 
 function draw() {
-  // Clear - but skip if in menu (background drawn separately)
-  if (state.gameState !== 'menu') {
+  // Clear - but skip if in menu or settings (background drawn separately)
+  if (state.gameState !== 'menu' && state.gameState !== 'settings') {
     state.ctx.fillStyle = '#000';
     state.ctx.fillRect(0, 0, state.W, state.H);
     
@@ -471,7 +704,11 @@ function draw() {
     drawWaitingMessage();
   }
 
-  drawMenu();
+  if (state.gameState === 'settings') {
+    drawSettings();
+  } else {
+    drawMenu();
+  }
 }
 
 // --- Game Loop ---
