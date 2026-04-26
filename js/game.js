@@ -9,6 +9,8 @@ const PADDLE_SPEED = 5;
 const BALL_SPEED_INIT = 5;
 const BALL_SPEED_MAX = 12;
 const BALL_SPEED_INC = 0.4;
+const PROGRESSIVE_SPEED_HITS = 5; // Hits before speed increase
+const PROGRESSIVE_SPEED_INC = 0.1; // 10% increase per level
 const WALL_MARGIN = 0;
 const MAX_ANGLE_DEG = 70;
 const SERVE_ANGLE_MAX = 15;
@@ -41,7 +43,11 @@ const state = {
   settingsMouseHover: -1, // Track mouse hover over settings options
   winner: null, // 1 or 2, set when game ends
   gameoverTimer: 0, // For flashing animation
-  pauseMenuSelected: 0 // Index of selected pause menu item (0=Resume, 1=Menu)
+  pauseMenuSelected: 0, // Index of selected pause menu item (0=Resume, 1=Menu)
+  // Progressive speed tracking
+  player1Hits: 0, // Counter for Player 1 hits
+  speedLevel: 1.0, // Speed multiplier (1.0 = 100%)
+  wasPlayingBeforePause: false // Track if game was playing when paused
 };
 
 // --- Menu Options ---
@@ -170,18 +176,20 @@ function setupInput() {
       } else if (e.code === 'Space' || e.code === 'Enter') {
         e.preventDefault();
         if (state.pauseMenuSelected === 0) {
-          state.gameState = 'waiting'; // Resume
+          // Resume Game - restore previous state
+          state.gameState = state.wasPlayingBeforePause ? 'playing' : 'waiting';
         } else {
           returnToMenu();
         }
       } else if (e.code === 'Escape') {
         // ESC while paused - resume game
         e.preventDefault();
-        state.gameState = 'waiting';
+        state.gameState = state.wasPlayingBeforePause ? 'playing' : 'waiting';
       }
     } else if (e.code === 'Escape' && (state.gameState === 'playing' || state.gameState === 'waiting')) {
       // ESC during gameplay - toggle pause
       e.preventDefault();
+      state.wasPlayingBeforePause = (state.gameState === 'playing'); // Save state BEFORE changing
       state.gameState = 'paused';
       state.pauseMenuSelected = 0;
     } else if (e.code === 'Space') {
@@ -192,7 +200,7 @@ function setupInput() {
         returnToMenu();
       } else if (state.gameState === 'paused') {
         // SPACE while paused - resume game
-        state.gameState = 'waiting';
+        state.gameState = state.wasPlayingBeforePause ? 'playing' : 'waiting';
       }
     }
   });
@@ -383,7 +391,15 @@ function startBalancedGame() {
 // --- Serve ---
 function serveBall() {
   state.gameState = 'playing';
-  state.ball.speed = BALL_SPEED_INIT;
+  // Reset progressive speed when starting a new game (from menu)
+  // But preserve it during rallies within the same game
+  if (state.player1Hits === 0 && state.speedLevel === 1.0) {
+    // Fresh game - start at base speed
+    state.ball.speed = BALL_SPEED_INIT;
+  } else {
+    // Continue with current speed level
+    state.ball.speed = BALL_SPEED_INIT * state.speedLevel;
+  }
 
   // Apply balanced mode paddle size if game started from settings
   if (state.settings.paddleSizePercent > 0) {
@@ -514,16 +530,33 @@ function reflectOffPaddle(paddle, dirX) {
   const angleDeg = clampedHit * MAX_ANGLE_DEG;
   const angleRad = angleDeg * Math.PI / 180;
 
-  // Increase ball speed on each hit
-  state.ball.speed = Math.min(state.ball.speed + BALL_SPEED_INC, BALL_SPEED_MAX);
-
-  // Apply ball speed reduction if the non-advantaged player hit the ball
-  // dirX = 1 means left paddle (player 1) hit, dirX = -1 means right paddle (player 2) hit
+  // Track Player 1 hits for progressive speed increase
   const hittingPlayer = dirX === 1 ? 1 : 2;
-  if (hittingPlayer !== state.settings.advantagedPlayer && state.settings.ballSpeedReduction > 0) {
-    state.ball.speed = state.ball.speed * (1 - state.settings.ballSpeedReduction / 100);
+  
+  if (hittingPlayer === 1) {
+    // Player 1 (left paddle) hit - increment counter
+    state.player1Hits++;
+    
+    // Every PROGRESSIVE_SPEED_HITS hits, increase speed level by 10%
+    if (state.player1Hits >= PROGRESSIVE_SPEED_HITS) {
+      state.player1Hits = 0;
+      state.speedLevel = Math.min(state.speedLevel + PROGRESSIVE_SPEED_INC, 2.0); // Cap at 200%
+    }
   }
 
+  // Calculate base speed with progressive increase
+  let newSpeed = Math.min(state.ball.speed + BALL_SPEED_INC, BALL_SPEED_MAX);
+  
+  // Apply progressive speed level multiplier
+  newSpeed = newSpeed * state.speedLevel;
+
+  // Apply ball speed reduction if the non-advantaged player hit the ball
+  // In Balanced Mode, apply reduction proportionally to current speed
+  if (hittingPlayer !== state.settings.advantagedPlayer && state.settings.ballSpeedReduction > 0) {
+    newSpeed = newSpeed * (1 - state.settings.ballSpeedReduction / 100);
+  }
+
+  state.ball.speed = newSpeed;
   state.ball.vx = dirX * Math.cos(angleRad) * state.ball.speed;
   state.ball.vy = Math.sin(angleRad) * state.ball.speed;
 }
@@ -534,7 +567,7 @@ function resetBall() {
   state.ball.y = state.H / 2 - BALL_SIZE / 2;
   state.ball.vx = 0;
   state.ball.vy = 0;
-  state.ball.speed = BALL_SPEED_INIT;
+  state.ball.speed = BALL_SPEED_INIT * state.speedLevel; // Apply current speed level
   
   // Don't reset paddle sizes - they should persist throughout the game
   // Paddle sizes are only reset when returning to main menu
@@ -573,6 +606,38 @@ function drawWaitingMessage() {
     state.ctx.fillText('Press SPACE to serve', state.W / 2, state.H - 50);
     state.ctx.fillText('ESC = Pause', state.W / 2, state.H - 30);
   }
+}
+
+// --- Draw Speed Level ---
+function drawSpeedLevel() {
+  // Update the HTML speed display div
+  const speedDisplay = document.getElementById('speed-display');
+  if (!speedDisplay) return;
+  
+  // Only display during active gameplay
+  if (state.gameState !== 'playing' && state.gameState !== 'waiting') {
+    speedDisplay.innerHTML = '';
+    return;
+  }
+  
+  // Calculate speed percentage
+  const speedPercent = Math.round(state.speedLevel * 100);
+  const speedBonus = Math.round((state.speedLevel - 1.0) * 100);
+  
+  // Display format: "Speed Level: 100%" or "Speed: +10%" etc.
+  let speedText;
+  if (speedBonus === 0) {
+    speedText = `<span style="color: #0ff;">Speed Level: ${speedPercent}%</span>`;
+  } else if (speedBonus > 0) {
+    speedText = `<span style="color: #0f0;">Speed: +${speedBonus}%</span>`;
+  } else {
+    speedText = `<span style="color: #f80;">Speed: ${speedBonus}%</span>`;
+  }
+  
+  // Also show hit counter progress
+  const hitsText = `<span style="color: #888; font-size: 14px;"> | Player 1 hits: ${state.player1Hits}/${PROGRESSIVE_SPEED_HITS}</span>`;
+  
+  speedDisplay.innerHTML = speedText + hitsText;
 }
 
 // --- Game Over Screen ---
@@ -683,6 +748,10 @@ function returnToMenu() {
   state.winner = null;
   state.gameoverTimer = 0;
   state.menuSelected = 1; // Go to 2 Players option
+  
+  // Reset progressive speed tracking
+  state.player1Hits = 0;
+  state.speedLevel = 1.0;
   
   // Reset ball to center
   state.ball.x = state.W / 2 - BALL_SIZE / 2;
@@ -915,6 +984,7 @@ function draw() {
     drawRect(state.ball.x, state.ball.y, state.ball.w, state.ball.h);
 
     drawWaitingMessage();
+    drawSpeedLevel(); // Draw speed level below game area
   }
 
   if (state.gameState === 'settings') {

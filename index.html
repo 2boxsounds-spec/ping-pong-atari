@@ -15,9 +15,21 @@
     font-family: 'Courier New', monospace;
     color: #fff;
   }
+  #game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
   canvas {
     border: 2px solid #fff;
     display: block;
+  }
+  #speed-display {
+    margin-top: 15px;
+    font-size: 16px;
+    color: #0ff;
+    text-align: center;
+    height: 50px;
   }
   #info {
     margin-top: 10px;
@@ -27,8 +39,11 @@
 </style>
 </head>
 <body>
-<canvas id="pong" width="800" height="600"></canvas>
-<div id="info">W/S = Left Paddle &nbsp;|&nbsp; ↑/↓ = Right Paddle &nbsp;|&nbsp; SPACE = Serve</div>
+<div id="game-container">
+  <canvas id="pong" width="800" height="600"></canvas>
+  <div id="speed-display"></div>
+  <div id="info">W/S = Left Paddle &nbsp;|&nbsp; ↑/↓ = Right Paddle &nbsp;|&nbsp; SPACE = Serve</div>
+</div>
 
 <script type="module">
   import { init } from './js/game.js';
