@@ -16,7 +16,7 @@ const SERVE_ANGLE_MAX = 15;
 // --- Game State ---
 const state = {
   scores: [0, 0],
-  gameState: 'menu', // 'menu' | 'waiting' | 'playing' | 'settings' | 'gameover'
+  gameState: 'menu', // 'menu' | 'waiting' | 'playing' | 'settings' | 'gameover' | 'paused'
   serveSide: 0, // 0 = left, 1 = right
   canvas: null,
   ctx: null,
@@ -40,7 +40,8 @@ const state = {
   settingsSelected: 0, // Index of selected settings option (0=Player, 1=Size)
   settingsMouseHover: -1, // Track mouse hover over settings options
   winner: null, // 1 or 2, set when game ends
-  gameoverTimer: 0 // For flashing animation
+  gameoverTimer: 0, // For flashing animation
+  pauseMenuSelected: 0 // Index of selected pause menu item (0=Resume, 1=Menu)
 };
 
 // --- Menu Options ---
@@ -158,16 +159,40 @@ function setupInput() {
         e.preventDefault();
         goBackToMenu();
       }
+    } else if (state.gameState === 'paused') {
+      // Pause menu navigation
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+        e.preventDefault();
+        state.pauseMenuSelected = (state.pauseMenuSelected - 1 + 2) % 2;
+      } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        state.pauseMenuSelected = (state.pauseMenuSelected + 1) % 2;
+      } else if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        if (state.pauseMenuSelected === 0) {
+          state.gameState = 'waiting'; // Resume
+        } else {
+          returnToMenu();
+        }
+      } else if (e.code === 'Escape') {
+        // ESC while paused - resume game
+        e.preventDefault();
+        state.gameState = 'waiting';
+      }
     } else if (e.code === 'Escape' && (state.gameState === 'playing' || state.gameState === 'waiting')) {
-      // ESC during gameplay - return to main menu
+      // ESC during gameplay - toggle pause
       e.preventDefault();
-      returnToMenu();
+      state.gameState = 'paused';
+      state.pauseMenuSelected = 0;
     } else if (e.code === 'Space') {
       e.preventDefault();
       if (state.gameState === 'waiting') serveBall();
       else if (state.gameState === 'gameover') {
         // SPACE during gameover - return to menu
         returnToMenu();
+      } else if (state.gameState === 'paused') {
+        // SPACE while paused - resume game
+        state.gameState = 'waiting';
       }
     }
   });
@@ -511,13 +536,8 @@ function resetBall() {
   state.ball.vy = 0;
   state.ball.speed = BALL_SPEED_INIT;
   
-  // Reset paddle sizes to default after scoring (if in balanced mode)
-  if (state.settings.paddleSizePercent > 0) {
-    state.paddles[0].h = PADDLE_H;
-    state.paddles[0].y = state.H / 2 - PADDLE_H / 2;
-    state.paddles[1].h = PADDLE_H;
-    state.paddles[1].y = state.H / 2 - PADDLE_H / 2;
-  }
+  // Don't reset paddle sizes - they should persist throughout the game
+  // Paddle sizes are only reset when returning to main menu
 }
 
 // --- Rendering ---
@@ -546,11 +566,12 @@ function drawScores() {
 }
 
 function drawWaitingMessage() {
-  if (state.gameState === 'waiting') {
+  if (state.gameState === 'waiting' || state.gameState === 'playing') {
     state.ctx.fillStyle = '#aaa';
     state.ctx.font = '18px Courier New';
     state.ctx.textAlign = 'center';
-    state.ctx.fillText('Press SPACE to serve', state.W / 2, state.H - 30);
+    state.ctx.fillText('Press SPACE to serve', state.W / 2, state.H - 50);
+    state.ctx.fillText('ESC = Pause', state.W / 2, state.H - 30);
   }
 }
 
@@ -606,6 +627,53 @@ function drawGameover() {
     const size = Math.sin(state.gameoverTimer * 0.2 + i) * 3 + 4;
     ctx.fillRect(px, py, size, size);
   }
+}
+
+// --- Pause Menu ---
+function drawPause() {
+  if (state.gameState !== 'paused') return;
+  
+  const ctx = state.ctx;
+  const W = state.W;
+  const H = state.H;
+  
+  // Draw semi-transparent overlay
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Title
+  ctx.shadowColor = '#ff0';
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = '#ff0';
+  ctx.font = 'bold 72px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('PAUSED', W / 2, H / 2 - 80);
+  ctx.shadowBlur = 0;
+  
+  // Menu options
+  const pauseOptions = ['Resume Game', 'Return to Main Menu'];
+  ctx.font = 'bold 32px Courier New';
+  pauseOptions.forEach((option, index) => {
+    const y = H / 2 + index * 60;
+    const isSelected = index === state.pauseMenuSelected;
+    
+    if (isSelected) {
+      ctx.fillStyle = '#0f0';
+      ctx.shadowColor = '#0f0';
+      ctx.shadowBlur = 10;
+      ctx.fillText('> ' + option + ' <', W / 2, y);
+      ctx.shadowBlur = 0;
+    } else {
+      ctx.fillStyle = '#fff';
+      ctx.fillText(option, W / 2, y);
+    }
+  });
+  
+  // Controls hint
+  ctx.fillStyle = '#666';
+  ctx.font = '16px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('↑/↓ or W/S = Navigate  |  SPACE/ENTER = Select  |  ESC = Resume', W / 2, H - 40);
 }
 
 // --- Return to Menu ---
@@ -853,6 +921,8 @@ function draw() {
     drawSettings();
   } else if (state.gameState === 'gameover') {
     drawGameover();
+  } else if (state.gameState === 'paused') {
+    drawPause();
   } else {
     drawMenu();
   }
