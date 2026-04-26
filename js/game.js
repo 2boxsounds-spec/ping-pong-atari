@@ -848,7 +848,6 @@ function drawSettings() {
   ctx.fillStyle = '#666';
   ctx.font = '16px Courier New';
   ctx.textAlign = 'center';
-  ctx.fillText('↑/↓ or W/S = Navigate  |  ←/→ or A/D = Change Value', W / 2, H - 60);
   ctx.fillText('SPACE/ENTER = Select  |  ESC = Back to Menu', W / 2, H - 35);
 }
 
@@ -974,11 +973,10 @@ function drawMenu() {
   }
   
   // Controls info at bottom
-  state.ctx.fillStyle = '#666';
+  state.ctx.fillStyle = '#a1a1a1';
   state.ctx.font = '16px Courier New';
   state.ctx.textAlign = 'center';
   state.ctx.fillText('↑/↓ or W/S = Navigate  |  SPACE/ENTER = Select', state.W / 2, state.H - 60);
-  state.ctx.fillText('W/S = Left Paddle  |  ↑/↓ = Right Paddle  |  SPACE = Serve', state.W / 2, state.H - 35);
 }
 
 function draw() {
