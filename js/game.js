@@ -323,9 +323,26 @@ function goBackToMenu() {
 }
 
 function startBalancedGame() {
+  // Apply paddle size handicap immediately when transitioning from settings to game
+  const baseHeight = PADDLE_H;
+  const sizeMultiplier = 1 + (state.settings.paddleSizePercent / 100);
+  const advantagedPaddleIndex = state.settings.advantagedPlayer - 1; // 0 or 1
+  
+  // Reset both paddles to base size first
+  state.paddles.forEach(p => {
+    p.h = baseHeight;
+  });
+  
+  // Apply size increase to advantaged player
+  state.paddles[advantagedPaddleIndex].h = baseHeight * sizeMultiplier;
+  
+  // Re-center paddles vertically
+  state.paddles.forEach(p => {
+    p.y = state.H / 2 - p.h / 2;
+  });
+  
   state.gameState = 'waiting';
   // Settings are already stored in state.settings
-  // Paddle sizes will be applied when game starts
 }
 
 // --- Serve ---
