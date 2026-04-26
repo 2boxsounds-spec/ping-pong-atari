@@ -6,7 +6,7 @@ const PADDLE_W = 12;
 const PADDLE_H = 80;
 const BALL_SIZE = 12;
 const PADDLE_SPEED = 5;
-const BALL_SPEED_INIT = 5;
+const BALL_SPEED_INIT = 3;
 const BALL_SPEED_MAX = 12;
 const BALL_SPEED_INC = 0.4;
 const PROGRESSIVE_SPEED_HITS = 5; // Hits before speed increase
@@ -39,6 +39,7 @@ const state = {
     paddleSizePercent: 50, // +25%, +50%, +75%, +100%
     ballSpeedReduction: 0 // 0, 10, or 25 (percentage reduction when opponent hits)
   },
+  isBalancedMode: false, // Flag to track if game is in balanced mode
   settingsSelected: 0, // Index of selected settings option (0=Player, 1=Size)
   settingsMouseHover: -1, // Track mouse hover over settings options
   winner: null, // 1 or 2, set when game ends
@@ -302,6 +303,19 @@ function setupInput() {
 function selectMenuItem() {
   const selected = menuOptions[state.menuSelected];
   if (selected.action === 'startGame') {
+    // Normal 2 Players mode - reset all handicaps
+    state.isBalancedMode = false;
+    state.settings.paddleSizePercent = 0;
+    state.settings.ballSpeedReduction = 0;
+    state.player1Hits = 0;
+    state.speedLevel = 1.0;
+    
+    // Reset paddles to default size
+    state.paddles[0].h = PADDLE_H;
+    state.paddles[1].h = PADDLE_H;
+    state.paddles[0].y = state.H / 2 - PADDLE_H / 2;
+    state.paddles[1].y = state.H / 2 - PADDLE_H / 2;
+    
     state.gameState = 'waiting';
   } else if (selected.action === 'comingSoon') {
     // Show placeholder message
@@ -317,7 +331,11 @@ function selectMenuItem() {
       state.showComingSoon = false;
     }, 2000);
   } else if (selected.action === 'openSettings') {
-    // Open balanced mode settings
+    // Open balanced mode settings - initialize defaults
+    state.isBalancedMode = false;
+    state.settings.advantagedPlayer = 1;
+    state.settings.paddleSizePercent = 50; // Default +50%
+    state.settings.ballSpeedReduction = 0;
     state.gameState = 'settings';
     state.settingsSelected = 0;
   }
@@ -366,6 +384,9 @@ function goBackToMenu() {
 }
 
 function startBalancedGame() {
+  // Set balanced mode flag
+  state.isBalancedMode = true;
+  
   // Apply paddle size handicap immediately when transitioning from settings to game
   const baseHeight = PADDLE_H;
   const sizeMultiplier = 1 + (state.settings.paddleSizePercent / 100);
@@ -402,7 +423,7 @@ function serveBall() {
   }
 
   // Apply balanced mode paddle size if game started from settings
-  if (state.settings.paddleSizePercent > 0) {
+  if (state.isBalancedMode && state.settings.paddleSizePercent > 0) {
     const sizeMultiplier = 1 + state.settings.paddleSizePercent / 100;
     const advantagedPlayer = state.settings.advantagedPlayer;
     
@@ -552,7 +573,7 @@ function reflectOffPaddle(paddle, dirX) {
 
   // Apply ball speed reduction if the non-advantaged player hit the ball
   // In Balanced Mode, apply reduction proportionally to current speed
-  if (hittingPlayer !== state.settings.advantagedPlayer && state.settings.ballSpeedReduction > 0) {
+  if (state.isBalancedMode && hittingPlayer !== state.settings.advantagedPlayer && state.settings.ballSpeedReduction > 0) {
     newSpeed = newSpeed * (1 - state.settings.ballSpeedReduction / 100);
   }
 
@@ -599,13 +620,8 @@ function drawScores() {
 }
 
 function drawWaitingMessage() {
-  if (state.gameState === 'waiting' || state.gameState === 'playing') {
-    state.ctx.fillStyle = '#aaa';
-    state.ctx.font = '18px Courier New';
-    state.ctx.textAlign = 'center';
-    state.ctx.fillText('Press SPACE to serve', state.W / 2, state.H - 50);
-    state.ctx.fillText('ESC = Pause', state.W / 2, state.H - 30);
-  }
+  // Function kept for compatibility but no longer displays hints
+  // Game is cleaner without these text hints
 }
 
 // --- Draw Speed Level ---
@@ -624,20 +640,17 @@ function drawSpeedLevel() {
   const speedPercent = Math.round(state.speedLevel * 100);
   const speedBonus = Math.round((state.speedLevel - 1.0) * 100);
   
-  // Display format: "Speed Level: 100%" or "Speed: +10%" etc.
+  // Display format: "Speed: 100%" or "Speed: +10%" etc. (no hit counter)
   let speedText;
   if (speedBonus === 0) {
-    speedText = `<span style="color: #0ff;">Speed Level: ${speedPercent}%</span>`;
+    speedText = `<span style="color: #0ff;">Speed: ${speedPercent}%</span>`;
   } else if (speedBonus > 0) {
     speedText = `<span style="color: #0f0;">Speed: +${speedBonus}%</span>`;
   } else {
     speedText = `<span style="color: #f80;">Speed: ${speedBonus}%</span>`;
   }
   
-  // Also show hit counter progress
-  const hitsText = `<span style="color: #888; font-size: 14px;"> | Player 1 hits: ${state.player1Hits}/${PROGRESSIVE_SPEED_HITS}</span>`;
-  
-  speedDisplay.innerHTML = speedText + hitsText;
+  speedDisplay.innerHTML = speedText;
 }
 
 // --- Game Over Screen ---
