@@ -25,11 +25,17 @@ const state = {
   paddles: [],
   ball: null,
   keys: {},
-  menuSelected: 0 // Index of selected menu item
+  menuSelected: 0, // Index of selected menu item
+  mouseHoverIndex: -1, // Track mouse hover over menu options
+  mouseX: 0,
+  mouseY: 0,
+  showComingSoon: false, // Flag for placeholder message
+  comingSoonTimer: null // Timer to auto-hide coming soon message
 };
 
 // --- Menu Options ---
 const menuOptions = [
+  { label: '1 Player', action: 'comingSoon' },
   { label: '2 Players', action: 'startGame' }
 ];
 
@@ -67,6 +73,8 @@ export function init(canvas) {
 // --- Input Handling ---
 function setupInput() {
   state.keys = {};
+  
+  // Keyboard input
   window.addEventListener('keydown', e => {
     state.keys[e.code] = true;
     
@@ -75,9 +83,11 @@ function setupInput() {
       if (e.code === 'ArrowUp' || e.code === 'KeyW') {
         e.preventDefault();
         state.menuSelected = (state.menuSelected - 1 + menuOptions.length) % menuOptions.length;
+        state.mouseHoverIndex = -1; // Clear mouse hover when using keyboard
       } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
         e.preventDefault();
         state.menuSelected = (state.menuSelected + 1) % menuOptions.length;
+        state.mouseHoverIndex = -1; // Clear mouse hover when using keyboard
       } else if (e.code === 'Space' || e.code === 'Enter') {
         e.preventDefault();
         selectMenuItem();
@@ -88,6 +98,55 @@ function setupInput() {
     }
   });
   window.addEventListener('keyup', e => { state.keys[e.code] = false; });
+  
+  // Mouse input for menu
+  state.canvas.addEventListener('mousemove', e => {
+    if (state.gameState !== 'menu') return;
+    
+    const rect = state.canvas.getBoundingClientRect();
+    state.mouseX = e.clientX - rect.left;
+    state.mouseY = e.clientY - rect.top;
+    
+    // Check if mouse is over any menu option
+    const titleY = state.H / 2 - 120;
+    const optionStartY = state.H / 2;
+    const optionSpacing = 50;
+    const fontSize = 32;
+    
+    state.mouseHoverIndex = -1;
+    for (let i = 0; i < menuOptions.length; i++) {
+      const optionY = optionStartY + i * optionSpacing;
+      const textWidth = state.ctx.measureText(menuOptions[i].label).width;
+      const textLeft = state.W / 2 - textWidth / 2 - 20; // Account for "> <" markers
+      const textRight = state.W / 2 + textWidth / 2 + 20;
+      const textTop = optionY - fontSize;
+      const textBottom = optionY + 10;
+      
+      if (state.mouseX >= textLeft && state.mouseX <= textRight &&
+          state.mouseY >= textTop && state.mouseY <= textBottom) {
+        state.mouseHoverIndex = i;
+        break;
+      }
+    }
+  });
+  
+  state.canvas.addEventListener('click', e => {
+    if (state.gameState !== 'menu') return;
+    
+    if (state.mouseHoverIndex !== -1) {
+      state.menuSelected = state.mouseHoverIndex;
+      selectMenuItem();
+    }
+  });
+  
+  // Add pointer cursor when hovering over menu
+  state.canvas.addEventListener('mousemove', e => {
+    if (state.gameState === 'menu' && state.mouseHoverIndex !== -1) {
+      state.canvas.style.cursor = 'pointer';
+    } else {
+      state.canvas.style.cursor = 'default';
+    }
+  });
 }
 
 // --- Menu Selection ---
@@ -95,6 +154,19 @@ function selectMenuItem() {
   const selected = menuOptions[state.menuSelected];
   if (selected.action === 'startGame') {
     state.gameState = 'waiting';
+  } else if (selected.action === 'comingSoon') {
+    // Show placeholder message
+    state.showComingSoon = true;
+    
+    // Clear any existing timer
+    if (state.comingSoonTimer) {
+      clearTimeout(state.comingSoonTimer);
+    }
+    
+    // Auto-hide after 2 seconds
+    state.comingSoonTimer = setTimeout(() => {
+      state.showComingSoon = false;
+    }, 2000);
   }
 }
 
@@ -253,29 +325,125 @@ function drawWaitingMessage() {
 }
 
 // --- Menu Rendering ---
+// --- Menu Background ---
+function drawMenuBackground() {
+  if (state.gameState !== 'menu') return;
+  
+  const ctx = state.ctx;
+  const W = state.W;
+  const H = state.H;
+  
+  // Retro gradient background (dark purple to black)
+  const gradient = ctx.createLinearGradient(0, 0, 0, H);
+  gradient.addColorStop(0, '#0a001a');
+  gradient.addColorStop(0.5, '#000000');
+  gradient.addColorStop(1, '#050010');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Draw retro grid pattern
+  ctx.strokeStyle = 'rgba(180, 0, 255, 0.15)';
+  ctx.lineWidth = 1;
+  
+  // Vertical grid lines (perspective effect)
+  const centerX = W / 2;
+  const vanishingY = H * 0.3; // Vanishing point
+  for (let i = -10; i <= 10; i++) {
+    const x = centerX + i * 60;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(centerX + i * 15, H);
+    ctx.stroke();
+  }
+  
+  // Horizontal grid lines (moving effect)
+  const time = Date.now() * 0.0005; // Slow animation
+  for (let i = 0; i < 15; i++) {
+    const y = H * 0.3 + Math.pow((i + (time % 1)) / 15, 2) * (H * 0.7);
+    if (y < H) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+  }
+  
+  // Add subtle scanlines
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+  for (let y = 0; y < H; y += 4) {
+    ctx.fillRect(0, y, W, 2);
+  }
+  
+  // Add some stars in the upper portion
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  const starPositions = [
+    [100, 80], [200, 120], [350, 60], [500, 100], [650, 70], [750, 130],
+    [150, 150], [400, 140], [600, 160], [700, 110]
+  ];
+  starPositions.forEach(([sx, sy]) => {
+    const twinkle = 0.5 + 0.5 * Math.sin(Date.now() * 0.003 + sx);
+    ctx.globalAlpha = twinkle * 0.6;
+    ctx.fillRect(sx, sy, 2, 2);
+  });
+  ctx.globalAlpha = 1.0;
+}
+
+// --- Menu Rendering ---
 function drawMenu() {
   if (state.gameState !== 'menu') return;
   
-  // Title
+  // Draw background first
+  drawMenuBackground();
+  
+  // Title with glow effect
+  state.ctx.shadowColor = '#00ffff';
+  state.ctx.shadowBlur = 15;
   state.ctx.fillStyle = '#fff';
   state.ctx.font = 'bold 72px Courier New';
   state.ctx.textAlign = 'center';
   state.ctx.fillText('ATARI PONG', state.W / 2, state.H / 2 - 120);
+  state.ctx.shadowBlur = 0;
   
   // Menu options
   state.ctx.font = 'bold 32px Courier New';
   menuOptions.forEach((option, index) => {
     const y = state.H / 2 + index * 50;
     const isSelected = index === state.menuSelected;
+    const isHovered = index === state.mouseHoverIndex;
     
-    if (isSelected) {
-      state.ctx.fillStyle = '#0f0'; // Green highlight for selected
+    if (isSelected || isHovered) {
+      // Green highlight for selected/hovered
+      state.ctx.fillStyle = '#0f0';
+      state.ctx.shadowColor = '#0f0';
+      state.ctx.shadowBlur = 10;
       state.ctx.fillText('> ' + option.label + ' <', state.W / 2, y);
+      state.ctx.shadowBlur = 0;
     } else {
       state.ctx.fillStyle = '#fff';
       state.ctx.fillText(option.label, state.W / 2, y);
     }
   });
+  
+  // Coming Soon overlay
+  if (state.showComingSoon) {
+    // Semi-transparent overlay
+    state.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    state.ctx.fillRect(state.W / 2 - 200, state.H / 2 - 40, 400, 80);
+    
+    // Border
+    state.ctx.strokeStyle = '#ff0';
+    state.ctx.lineWidth = 2;
+    state.ctx.strokeRect(state.W / 2 - 200, state.H / 2 - 40, 400, 80);
+    
+    // Text
+    state.ctx.fillStyle = '#ff0';
+    state.ctx.font = 'bold 24px Courier New';
+    state.ctx.textAlign = 'center';
+    state.ctx.fillText('AI Opponent - WIP', state.W / 2, state.H / 2 + 5);
+    state.ctx.font = '16px Courier New';
+    state.ctx.fillStyle = '#fff';
+    state.ctx.fillText('Coming Soon!', state.W / 2, state.H / 2 + 30);
+  }
   
   // Controls info at bottom
   state.ctx.fillStyle = '#666';
@@ -286,21 +454,24 @@ function drawMenu() {
 }
 
 function draw() {
-  // Clear
-  state.ctx.fillStyle = '#000';
-  state.ctx.fillRect(0, 0, state.W, state.H);
+  // Clear - but skip if in menu (background drawn separately)
+  if (state.gameState !== 'menu') {
+    state.ctx.fillStyle = '#000';
+    state.ctx.fillRect(0, 0, state.W, state.H);
+    
+    drawDashedCenterLine();
+    drawScores();
 
-  drawDashedCenterLine();
-  drawScores();
+    // Paddles
+    for (let p of state.paddles) drawRect(p.x, p.y, p.w, p.h);
 
-  // Paddles
-  for (let p of state.paddles) drawRect(p.x, p.y, p.w, p.h);
+    // Ball
+    drawRect(state.ball.x, state.ball.y, state.ball.w, state.ball.h);
 
-  // Ball
-  drawRect(state.ball.x, state.ball.y, state.ball.w, state.ball.h);
+    drawWaitingMessage();
+  }
 
   drawMenu();
-  drawWaitingMessage();
 }
 
 // --- Game Loop ---
