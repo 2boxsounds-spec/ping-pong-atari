@@ -16,7 +16,7 @@ const SERVE_ANGLE_MAX = 15;
 // --- Game State ---
 const state = {
   scores: [0, 0],
-  gameState: 'menu', // 'menu' | 'waiting' | 'playing' | 'settings'
+  gameState: 'menu', // 'menu' | 'waiting' | 'playing' | 'settings' | 'gameover'
   serveSide: 0, // 0 = left, 1 = right
   canvas: null,
   ctx: null,
@@ -38,7 +38,9 @@ const state = {
     ballSpeedReduction: 0 // 0, 10, or 25 (percentage reduction when opponent hits)
   },
   settingsSelected: 0, // Index of selected settings option (0=Player, 1=Size)
-  settingsMouseHover: -1 // Track mouse hover over settings options
+  settingsMouseHover: -1, // Track mouse hover over settings options
+  winner: null, // 1 or 2, set when game ends
+  gameoverTimer: 0 // For flashing animation
 };
 
 // --- Menu Options ---
@@ -156,9 +158,17 @@ function setupInput() {
         e.preventDefault();
         goBackToMenu();
       }
+    } else if (e.code === 'Escape' && (state.gameState === 'playing' || state.gameState === 'waiting')) {
+      // ESC during gameplay - return to main menu
+      e.preventDefault();
+      returnToMenu();
     } else if (e.code === 'Space') {
       e.preventDefault();
       if (state.gameState === 'waiting') serveBall();
+      else if (state.gameState === 'gameover') {
+        // SPACE during gameover - return to menu
+        returnToMenu();
+      }
     }
   });
   window.addEventListener('keyup', e => { state.keys[e.code] = false; });
@@ -448,11 +458,25 @@ function moveBall() {
   if (state.ball.x + state.ball.w < 0) {
     state.scores[1]++;
     state.serveSide = 0;
-    resetBall();
+    // Check win condition (first to 5 points)
+    if (state.scores[1] >= 5) {
+      state.gameState = 'gameover';
+      state.winner = 2;
+      state.gameoverTimer = 0;
+    } else {
+      resetBall();
+    }
   } else if (state.ball.x > state.W) {
     state.scores[0]++;
     state.serveSide = 1;
-    resetBall();
+    // Check win condition (first to 5 points)
+    if (state.scores[0] >= 5) {
+      state.gameState = 'gameover';
+      state.winner = 1;
+      state.gameoverTimer = 0;
+    } else {
+      resetBall();
+    }
   }
 }
 
@@ -528,6 +552,82 @@ function drawWaitingMessage() {
     state.ctx.textAlign = 'center';
     state.ctx.fillText('Press SPACE to serve', state.W / 2, state.H - 30);
   }
+}
+
+// --- Game Over Screen ---
+function drawGameover() {
+  if (state.gameState !== 'gameover') return;
+  
+  const ctx = state.ctx;
+  const W = state.W;
+  const H = state.H;
+  
+  // Clear and draw background
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  
+  // Flashing effect for celebration
+  state.gameoverTimer++;
+  const flash = Math.floor(state.gameoverTimer / 15) % 2 === 0;
+  
+  // Winner text with flashing colors
+  const winnerText = `PLAYER ${state.winner} WINS!`;
+  ctx.font = 'bold 72px Courier New';
+  ctx.textAlign = 'center';
+  
+  if (flash) {
+    ctx.fillStyle = '#0f0';
+    ctx.shadowColor = '#0f0';
+    ctx.shadowBlur = 20;
+  } else {
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 20;
+  }
+  
+  ctx.fillText(winnerText, W / 2, H / 2 - 50);
+  ctx.shadowBlur = 0;
+  
+  // Final score
+  ctx.font = 'bold 32px Courier New';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText(`Final Score: ${state.scores[0]} - ${state.scores[1]}`, W / 2, H / 2 + 20);
+  
+  // Instructions
+  ctx.font = '20px Courier New';
+  ctx.fillStyle = '#666';
+  ctx.fillText('Press SPACE to return to menu', W / 2, H / 2 + 80);
+  
+  // Simple particle celebration (small squares)
+  ctx.fillStyle = flash ? '#0f0' : '#ff0';
+  for (let i = 0; i < 20; i++) {
+    const px = (Math.sin(state.gameoverTimer * 0.1 + i) * 0.5 + 0.5) * W;
+    const py = (Math.cos(state.gameoverTimer * 0.15 + i * 0.5) * 0.5 + 0.5) * H;
+    const size = Math.sin(state.gameoverTimer * 0.2 + i) * 3 + 4;
+    ctx.fillRect(px, py, size, size);
+  }
+}
+
+// --- Return to Menu ---
+function returnToMenu() {
+  state.gameState = 'menu';
+  state.scores = [0, 0];
+  state.winner = null;
+  state.gameoverTimer = 0;
+  state.menuSelected = 1; // Go to 2 Players option
+  
+  // Reset ball to center
+  state.ball.x = state.W / 2 - BALL_SIZE / 2;
+  state.ball.y = state.H / 2 - BALL_SIZE / 2;
+  state.ball.vx = 0;
+  state.ball.vy = 0;
+  state.ball.speed = BALL_SPEED_INIT;
+  
+  // Reset paddles to default positions and sizes
+  state.paddles[0].y = state.H / 2 - PADDLE_H / 2;
+  state.paddles[0].h = PADDLE_H;
+  state.paddles[1].y = state.H / 2 - PADDLE_H / 2;
+  state.paddles[1].h = PADDLE_H;
 }
 
 // --- Settings Menu Rendering ---
@@ -751,6 +851,8 @@ function draw() {
 
   if (state.gameState === 'settings') {
     drawSettings();
+  } else if (state.gameState === 'gameover') {
+    drawGameover();
   } else {
     drawMenu();
   }
