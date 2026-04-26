@@ -16,7 +16,7 @@ const SERVE_ANGLE_MAX = 15;
 // --- Game State ---
 const state = {
   scores: [0, 0],
-  gameState: 'waiting', // 'waiting' | 'playing'
+  gameState: 'menu', // 'menu' | 'waiting' | 'playing'
   serveSide: 0, // 0 = left, 1 = right
   canvas: null,
   ctx: null,
@@ -24,8 +24,14 @@ const state = {
   H: 0,
   paddles: [],
   ball: null,
-  keys: {}
+  keys: {},
+  menuSelected: 0 // Index of selected menu item
 };
+
+// --- Menu Options ---
+const menuOptions = [
+  { label: '2 Players', action: 'startGame' }
+];
 
 // --- Initialization ---
 export function init(canvas) {
@@ -63,12 +69,33 @@ function setupInput() {
   state.keys = {};
   window.addEventListener('keydown', e => {
     state.keys[e.code] = true;
-    if (e.code === 'Space') {
+    
+    // Menu input handling
+    if (state.gameState === 'menu') {
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+        e.preventDefault();
+        state.menuSelected = (state.menuSelected - 1 + menuOptions.length) % menuOptions.length;
+      } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        state.menuSelected = (state.menuSelected + 1) % menuOptions.length;
+      } else if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        selectMenuItem();
+      }
+    } else if (e.code === 'Space') {
       e.preventDefault();
       if (state.gameState === 'waiting') serveBall();
     }
   });
   window.addEventListener('keyup', e => { state.keys[e.code] = false; });
+}
+
+// --- Menu Selection ---
+function selectMenuItem() {
+  const selected = menuOptions[state.menuSelected];
+  if (selected.action === 'startGame') {
+    state.gameState = 'waiting';
+  }
 }
 
 // --- Serve ---
@@ -225,6 +252,39 @@ function drawWaitingMessage() {
   }
 }
 
+// --- Menu Rendering ---
+function drawMenu() {
+  if (state.gameState !== 'menu') return;
+  
+  // Title
+  state.ctx.fillStyle = '#fff';
+  state.ctx.font = 'bold 72px Courier New';
+  state.ctx.textAlign = 'center';
+  state.ctx.fillText('ATARI PONG', state.W / 2, state.H / 2 - 120);
+  
+  // Menu options
+  state.ctx.font = 'bold 32px Courier New';
+  menuOptions.forEach((option, index) => {
+    const y = state.H / 2 + index * 50;
+    const isSelected = index === state.menuSelected;
+    
+    if (isSelected) {
+      state.ctx.fillStyle = '#0f0'; // Green highlight for selected
+      state.ctx.fillText('> ' + option.label + ' <', state.W / 2, y);
+    } else {
+      state.ctx.fillStyle = '#fff';
+      state.ctx.fillText(option.label, state.W / 2, y);
+    }
+  });
+  
+  // Controls info at bottom
+  state.ctx.fillStyle = '#666';
+  state.ctx.font = '16px Courier New';
+  state.ctx.textAlign = 'center';
+  state.ctx.fillText('↑/↓ or W/S = Navigate  |  SPACE/ENTER = Select', state.W / 2, state.H - 60);
+  state.ctx.fillText('W/S = Left Paddle  |  ↑/↓ = Right Paddle  |  SPACE = Serve', state.W / 2, state.H - 35);
+}
+
 function draw() {
   // Clear
   state.ctx.fillStyle = '#000';
@@ -239,6 +299,7 @@ function draw() {
   // Ball
   drawRect(state.ball.x, state.ball.y, state.ball.w, state.ball.h);
 
+  drawMenu();
   drawWaitingMessage();
 }
 
