@@ -34,7 +34,8 @@ const state = {
   // Balanced mode settings
   settings: {
     advantagedPlayer: 1, // 1 = Player 1 (Left), 2 = Player 2 (Right)
-    paddleSizePercent: 50 // +25%, +50%, +75%, +100%
+    paddleSizePercent: 50, // +25%, +50%, +75%, +100%
+    ballSpeedReduction: 0 // 0, 10, or 25 (percentage reduction when opponent hits)
   },
   settingsSelected: 0, // Index of selected settings option (0=Player, 1=Size)
   settingsMouseHover: -1 // Track mouse hover over settings options
@@ -51,6 +52,7 @@ const menuOptions = [
 const settingsOptions = [
   { label: 'Give advantage to:', value: 'player' },
   { label: 'Paddle Size:', value: 'size' },
+  { label: 'Ball Speed:', value: 'ballSpeed' },
   { label: 'Start Game', action: 'startBalancedGame' }
 ];
 
@@ -67,6 +69,12 @@ const paddleSizeOptions = [
   { label: '+100%', value: 100 }
 ];
 
+const ballSpeedReductionOptions = [
+  { label: 'Normal', value: 0 },
+  { label: '-10%', value: 10 },
+  { label: '-25%', value: 25 }
+];
+
 // --- Initialization ---
 export function init(canvas) {
   state.canvas = canvas;
@@ -77,6 +85,7 @@ export function init(canvas) {
   // Reset balanced mode settings to defaults
   state.settings.advantagedPlayer = 1;
   state.settings.paddleSizePercent = 50;
+  state.settings.ballSpeedReduction = 0;
 
   // Initialize paddles
   state.paddles = [
@@ -290,6 +299,14 @@ function changeSettingsValue(increase) {
     } else {
       state.settings.paddleSizePercent = paddleSizeOptions[(currentIndex - 1 + paddleSizeOptions.length) % paddleSizeOptions.length].value;
     }
+  } else if (selected.value === 'ballSpeed') {
+    // Cycle through ball speed reduction options
+    const currentIndex = ballSpeedReductionOptions.findIndex(opt => opt.value === state.settings.ballSpeedReduction);
+    if (increase) {
+      state.settings.ballSpeedReduction = ballSpeedReductionOptions[(currentIndex + 1) % ballSpeedReductionOptions.length].value;
+    } else {
+      state.settings.ballSpeedReduction = ballSpeedReductionOptions[(currentIndex - 1 + ballSpeedReductionOptions.length) % ballSpeedReductionOptions.length].value;
+    }
   }
 }
 
@@ -431,7 +448,15 @@ function reflectOffPaddle(paddle, dirX) {
   const angleDeg = clampedHit * MAX_ANGLE_DEG;
   const angleRad = angleDeg * Math.PI / 180;
 
+  // Increase ball speed on each hit
   state.ball.speed = Math.min(state.ball.speed + BALL_SPEED_INC, BALL_SPEED_MAX);
+
+  // Apply ball speed reduction if the non-advantaged player hit the ball
+  // dirX = 1 means left paddle (player 1) hit, dirX = -1 means right paddle (player 2) hit
+  const hittingPlayer = dirX === 1 ? 1 : 2;
+  if (hittingPlayer !== state.settings.advantagedPlayer && state.settings.ballSpeedReduction > 0) {
+    state.ball.speed = state.ball.speed * (1 - state.settings.ballSpeedReduction / 100);
+  }
 
   state.ball.vx = dirX * Math.cos(angleRad) * state.ball.speed;
   state.ball.vy = Math.sin(angleRad) * state.ball.speed;
@@ -538,6 +563,9 @@ function drawSettings() {
     } else if (option.value === 'size') {
       const sizeLabel = `+${state.settings.paddleSizePercent}%`;
       displayText = `Paddle Size: ${sizeLabel}`;
+    } else if (option.value === 'ballSpeed') {
+      const speedLabel = state.settings.ballSpeedReduction === 0 ? 'Normal' : `-${state.settings.ballSpeedReduction}%`;
+      displayText = `Ball speed when opponent hits: ${speedLabel}`;
     }
     
     if (isSelected || isHovered) {
